@@ -1,0 +1,479 @@
+<template>
+    <!-- Botón de Menú -->
+    <div class="menu-btn" @click.stop="toggleMenu">
+        <i class="fas fa-bars fa-2x"></i>
+    </div>
+
+    <!-- Navegación -->
+    <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+        <!-- Marca -->
+        <router-link to="/index" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+        <!-- Navegación Izquierda -->
+        <ul class="nav-menu" :class="{ 'show': menuOpen }">
+            <li><router-link to="/index">Inicio</router-link></li>
+            <li><router-link to="/disponible" class="open">Encuestas</router-link></li>
+            <li class="profile-menu">
+                <router-link to="" @click.stop="toggleProfileMenu">Perfil</router-link>
+                <ul v-if="profileMenuOpen" class="dropdown-menu" ref="profileMenu">
+                    <li><router-link to="/perfil">Ver Perfil</router-link></li>
+                    <li @click="cerrarSesion"><router-link to="">Cerrar Sesión</router-link></li>
+                </ul>
+            </li>
+        </ul>
+    </nav>
+    <div class="boton-encuesta" v-if="!modoEdicion">
+        <router-link to="/disponible" class="button-active">Mis Encuestas</router-link>
+        <router-link to="/resolver" class="button">Disponibles</router-link>
+    </div>
+
+    <div class="container available-surveys">
+        <div v-if="encuestasUsuarioActual.length > 0 && !encuesta">
+            <div class="survey-list">
+                <div v-for="(encuesta, index) in encuestasUsuarioActual" :key="index" class="survey-card">
+                    <div class="img"></div>
+                    <h3 class="survey-title">{{ encuesta.titulo }}</h3>
+                    <p class="survey-description">{{ encuesta.creador }}</p>
+                    <div class="espacio-boton">
+                        <button @click="editarEncuesta(index)" class="boton btn-editar">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button @click="confirmarEliminarEncuesta(index)" class="boton btn-eliminar">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button @click="verResultados(index)" class="boton btn-resultados">
+                            <i class="fas fa-poll"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mostrar preguntas de la encuesta seleccionada para editar -->
+        <div v-if="encuesta" class="encuesta-detalle">
+
+            <h2 class="titulo"> {{ encuesta.titulo }}</h2>
+            <div class="input-contenedor">
+                <input type="text" class="encuesta-input" v-model="encuesta.titulo" />
+            </div>
+            <div class="fecha">
+                <h1>Fecha y hora límite:</h1>
+                <input type="datetime-local" v-model="encuesta.fechaLimite" :min="fechaMinima"  class="fecha-input" required/>
+            </div>
+
+            <p>
+                Contraseña:
+                <input type="password" v-model="encuesta.password" />
+            </p>
+
+            <div v-for="(pregunta, pIndex) in encuesta.preguntas" :key="pIndex" class="pregunta-container">
+                <div>
+                    <label>Texto de la Pregunta</label>
+                    <input type="text" v-model="pregunta.texto" />
+                    <select v-model="pregunta.tipo">
+                        <option value="opcion-multiple">Opción Múltiple</option>
+                        <option value="parrafo">Párrafo</option>
+                    </select>
+                    <div v-if="pregunta.tipo === 'opcion-multiple'">
+                        <label>Opciones:</label>
+                        <div v-for="(opcion, oIndex) in pregunta.opciones" :key="oIndex">
+                            <input type="text" v-model="pregunta.opciones[oIndex]" />
+                            <button @click="eliminarOpcion(pIndex, oIndex)">Eliminar Opción</button>
+                        </div>
+                        <button @click="agregarOpcion(pIndex)">Agregar Opción</button>
+                    </div>
+                    <div v-else-if="pregunta.tipo === 'parrafo'">
+                        <textarea v-model="pregunta.texto"></textarea>
+                    </div>
+                    <button @click="eliminarPregunta(pIndex)">Eliminar Pregunta</button>
+                </div>
+            </div>
+            <button @click="agregarPregunta">Agregar Pregunta</button>
+            <button @click="guardarEncuesta">Guardar Cambios</button>
+            <button @click="volverALista">Volver a la lista de encuestas</button>
+        </div>
+        <!-- Mensaje si no hay encuestas disponibles -->
+        <div v-else-if="encuestasUsuarioActual.length === 0">
+            <p>No hay encuestas disponibles para gestionar.</p>
+        </div>
+    </div>
+</template>
+
+<script>
+import Swal from 'sweetalert2';
+
+export default {
+    name: 'GestionarEncuestaVue',
+    data() {
+        return {
+            encuestas: [],
+            encuestasUsuarioActual: [],
+            encuesta: null,
+            usuarioActual: null,
+            menuOpen: false,
+            profileMenuOpen: false,
+            modoEdicion: false, // Nueva variable para controlar el modo de edición
+        };
+    },
+
+    created() {
+        const usuarioActual = localStorage.getItem('usuarioActual');
+        if (usuarioActual) {
+            this.usuarioActual = JSON.parse(usuarioActual);
+        }
+        this.obtenerEncuestasLocalStorage();
+    },
+    computed: {
+    fechaMinima() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const hh = String(today.getHours()).padStart(2, '0');
+      const min = String(today.getMinutes()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    },
+    esFechaLimiteValida() {
+      const ahora = new Date();
+      const fechaLimite = new Date(this.encuesta.fechaLimite);
+      return fechaLimite > ahora || (fechaLimite.toDateString() === ahora.toDateString() && fechaLimite > ahora);
+    }
+  },
+    methods: {
+        toggleProfileMenu() {
+            this.profileMenuOpen = !this.profileMenuOpen;
+        },
+        cerrarSesion() {
+            localStorage.removeItem('isLoggedIn');
+            localStorage.removeItem('userData');
+            this.$router.push('/login');
+        },
+        obtenerEncuestasLocalStorage() {
+            const encuestas = JSON.parse(localStorage.getItem('encuestas')) || [];
+            this.encuestas = encuestas.map(encuesta => {
+                const creador = JSON.parse(encuesta.usuario);
+                return {
+                    ...encuesta,
+                    creador: creador.nombre,
+                    vencida: new Date(encuesta.fechaLimite) < new Date()
+                };
+            });
+            this.filtrarEncuestasUsuarioActual();
+        },
+        filtrarEncuestasUsuarioActual() {
+            this.encuestasUsuarioActual = this.encuestas.filter(
+                encuesta => encuesta.creador === this.usuarioActual.nombre
+            );
+        },
+        editarEncuesta(index) {
+            this.encuesta = this.encuestasUsuarioActual[index];
+            this.modoEdicion = true; // Activar modo de edición
+        },
+        agregarOpcion(pIndex) {
+            this.encuesta.preguntas[pIndex].opciones.push('');
+        },
+        eliminarOpcion(pIndex, oIndex) {
+            this.encuesta.preguntas[pIndex].opciones.splice(oIndex, 1);
+        },
+        agregarPregunta() {
+            this.encuesta.preguntas.push({
+                texto: '',
+                tipo: 'opcion-multiple',
+                opciones: ['']
+            });
+        },
+        eliminarPregunta(pIndex) {
+            this.encuesta.preguntas.splice(pIndex, 1);
+        },
+        guardarEncuesta() {
+            const index = this.encuestas.findIndex(enc => enc.titulo === this.encuesta.titulo);
+
+            if (!this.esFechaLimiteValida) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'La fecha y hora límite deben ser posteriores a la fecha y hora actuales.',
+        });
+        return false;
+      }
+            if (index !== -1) {
+                this.encuestas.splice(index, 1, this.encuesta);
+                localStorage.setItem('encuestas', JSON.stringify(this.encuestas));
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Cambios guardados',
+                    text: 'La encuesta ha sido actualizada exitosamente.',
+                });
+                this.volverALista();
+            }
+        },
+        confirmarEliminarEncuesta(index) {
+            Swal.fire({
+                title: 'Confirmar Eliminación',
+                text: '¿Está seguro de que desea eliminar esta encuesta?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    this.eliminarEncuesta(index);
+                }
+            });
+        },
+        eliminarEncuesta(index) {
+            const tituloEncuesta = this.encuestasUsuarioActual[index].titulo;
+            const indexGeneral = this.encuestas.findIndex(encuesta => encuesta.titulo === tituloEncuesta);
+            if (indexGeneral !== -1) {
+                this.encuestas.splice(indexGeneral, 1);
+                localStorage.setItem('encuestas', JSON.stringify(this.encuestas));
+                this.filtrarEncuestasUsuarioActual();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Encuesta Eliminada',
+                    text: 'La encuesta ha sido eliminada exitosamente.',
+                });
+            }
+        },
+        verResultados(index) {
+            const encuesta = this.encuestasUsuarioActual[index];
+            this.$router.push({ name: 'ResultadosEncuesta', params: { titulo: encuesta.titulo } });
+        },
+        volverALista() {
+            this.encuesta = null;
+            this.modoEdicion = false; // Desactivar modo de edición
+        },
+        toggleMenu() {
+            this.menuOpen = !this.menuOpen;
+        },
+    }
+};
+</script>
+
+
+<style scoped>
+.encuesta-detalle {
+    margin-top: 150px;
+    background-color: white;
+    border-radius: 20px;
+    padding-bottom: 50px;
+    box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.3);
+    /* Sombras */
+    justify-content: center;
+}
+
+.encuesta-detalle .input-contenedor {
+    justify-content: center;
+    border-color: aqua;
+}
+
+.titulo {
+    color: #009292;
+    /* Color del texto */
+    padding-top: 40px;
+    padding-bottom: 20px
+}
+
+.espacio {
+    margin-top: 100px;
+}
+
+.pregunta-header {
+    display: flex;
+    align-items: center;
+}
+
+.pregunta-numero {
+    margin-right: 10px;
+}
+
+.draggable {
+    cursor: move;
+    user-select: none;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+
+input[type="datetime-local"]:focus {
+    border-color: #329977;
+    /* Cambia el color del borde al enfocar el campo */
+    outline: none;
+    /* Elimina el contorno predeterminado al enfocar */
+    box-shadow: 0 0 20px #329977;
+    /* Agrega una sombra alrededor del campo al enfocar */
+}
+
+.encuesta-vencida {
+    color: red;
+}
+
+.encuesta-detalle p,
+h2,
+h3 {
+    color: black;
+}
+
+/* Estilos para las encuestas disponibles */
+.img {
+    background-color: #0c9191;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 65px;
+    background-image: url('/src/assets/img.jpeg');
+    width: 350px;
+    transition: transform 0.3s ease;
+    margin-left: -20px;
+    margin-top: -25px;
+}
+
+.available-surveys {
+    margin-top: 70px;
+    text-align: center;
+    padding-bottom: 20px;
+
+
+}
+
+.espacio-boton {
+    padding-bottom: 20px;
+
+}
+
+.survey-list {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-top: 50px;
+
+}
+
+.survey-card {
+    border-top-left-radius: 20%;
+    border-top-right-radius: 20px;
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    width: 300px;
+    transition: transform 0.3s ease;
+    box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.3);
+
+}
+
+.survey-card:hover {
+    transform: translateY(-10px);
+}
+
+.survey-title {
+    font-size: 20px;
+    font-weight: bold;
+    margin: 0;
+    padding: 10px;
+}
+
+.survey-description {
+    color: #000;
+    font-size: 14px;
+    margin: 0;
+    padding: 0 10px 10px 10px;
+}
+
+.boton-encuesta {
+    margin-top: 150px;
+    justify-content: center;
+    text-align: center;
+
+}
+
+
+
+
+.boton-encuesta .button {
+    justify-content: center;
+    margin-right: 50px;
+    padding: 15px;
+
+    border-radius: 20px;
+    font-size: 20px;
+    font-weight: bold;
+    background: white;
+    color: black;
+    border: 2px solid #3b3a3a;
+}
+
+.boton-encuesta .button:hover {
+    background: #ccc;
+    color: black;
+    border: 2px solid black;
+}
+
+.boton-encuesta .button-active {
+    justify-content: center;
+    margin-right: 10px;
+    margin-left: 10px;
+    font-size: 30px;
+    width: 290px;
+    padding: 15px;
+    border-radius: 20px;
+    font-weight: bold;
+    background: #76e698;
+    color: black;
+    border: 2px solid #3b3a3a;
+}
+
+.boton-encuesta .button-active:hover {
+
+    background: aqua;
+    color: black;
+    border: 2px solid black;
+}
+
+
+.boton-activo {
+    background-color: #38bb49;
+}
+
+.boton {
+    transition: background-color 0.3s ease;
+    justify-content: center;
+    padding: 10px 20px;
+    /* Ajusta el padding según sea necesario */
+    margin-right: 10px;
+    margin-left: 10px;
+    border-radius: 5px;
+    color: white;
+
+
+}
+
+.boton:hover {
+    background-color: #1a252f;
+}
+
+.btn-editar {
+    background-color: #007bff;
+}
+
+.btn-editar:hover {
+    background-color: blue;
+}
+
+.btn-eliminar {
+    background-color: #dc3545;
+}
+
+.btn-eliminar:hover {
+    background-color: red;
+}
+
+
+
+.btn-resultados {
+    background-color: #38bb49;
+}
+
+.btn-resultados:hover {
+    background-color: green;
+}
+</style>

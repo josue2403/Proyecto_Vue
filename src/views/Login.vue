@@ -1,0 +1,365 @@
+<template>
+  <div>
+    <!-- Botón de Menú -->
+    <div class="menu-btn" @click="toggleMenu">
+      <i class="fas fa-bars fa-2x"></i>
+    </div>
+
+    <!-- Navegación -->
+    <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+      <!-- Marca -->
+      <router-link to="/" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+      <!-- Navegación Izquierda -->
+      <ul class="nav-menu" :class="{ 'show': menuOpen }">
+        <li ><router-link to="/login" class="open">Iniciar Sesión</router-link></li>
+
+      </ul>
+    </nav>
+    <!-- Formulario de inicio de Sesión -->
+    <div class="inicio">
+      <form class="formulario-inicio" @submit.prevent="login">
+        <h1>Iniciar Sesión</h1>
+        <div class="contenedor">
+          <div class="input-contenedor">
+            <i class="fas fa-envelope icon"></i>
+            <input type="email" id="email" placeholder="Correo Electrónico" v-model="email" required>
+          </div>
+
+          <!-- Campo de contraseña con botón de ver/ocultar -->
+          <div class="input-contenedor">
+            <i class="fas fa-key icon"></i>
+            <input :type="showPassword ? 'text' : 'password'" id="password" placeholder="Contraseña" v-model="password" required>
+            <button v-if="password" type="button" class="toggle" @click="togglePasswordVisibility">
+              <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+          <h2 class="boton" @click.prevent="forgotPassword"><a href="">¿Olvidaste tu contraseña?</a></h2>
+          <!-- Botón de inicio de sesión -->
+          <button type="submit" :class="{ 'boton-active': true, 'boton-disabled': !isValidForm }">
+            Acceder
+          </button>
+          <p>¿No tienes una cuenta? <router-link to="/register" class="link">Regístrate</router-link></p>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+<script>
+import Swal from 'sweetalert2';
+
+export default {
+  name: 'LoginVue',
+  data() {
+    return {
+      email: '',
+      password: '',
+      isValidEmail: false,
+      isValidPassword: false,
+      showPassword: false,
+      menuOpen: false,
+    };
+  },
+  computed: {
+    isValidForm() {
+      return this.isValidEmail && this.isValidPassword;
+    },
+    isLoggedIn() {
+      return localStorage.getItem('isLoggedIn');
+    }
+  },
+  watch: {
+    email(newEmail) {
+      this.isValidEmail = this.validateEmail(newEmail);
+    },
+    password(newPassword) {
+      this.isValidPassword = this.validatePassword(newPassword);
+    }
+  },
+  methods: {
+    // Validaciones de email y contraseña
+    validateEmail(email) {
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(String(email).toLowerCase());
+    },
+    validatePassword(password) {
+      return password.length >= 8;
+    },
+    //Método para mostrar y ocultar contraseña 
+    togglePasswordVisibility() {
+      this.showPassword = !this.showPassword;
+    },
+    toggleMenu() {
+      this.menuOpen = !this.menuOpen;
+    },
+    // Verificamos el email del usuario en localStorage
+    login() {
+      const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
+      const user = usuarios.find(user => user.email === this.email && user.password === this.password);
+
+      if (user) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Inicio de sesión exitoso',
+          text: '¡Bienvenido!'
+        });
+
+        // Guardar la información mínima del usuario en localStorage
+        localStorage.setItem('usuarioActual', JSON.stringify({
+          id_usuario: user.id,
+          nombre: user.nombre,
+          email: user.email,
+          password: user.password
+        }));
+        localStorage.setItem('isLoggedIn', true); // Marcar como autenticado
+
+        // Redirigir según el tipo de usuario
+        if (user.email === 'admin@gmail.com') {
+          this.$router.push('/administrar');
+        } else {
+          this.$router.push('/index');
+        }
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error de inicio de sesión',
+          text: 'Email o contraseña incorrectos.'
+        });
+      }
+    },
+    // Método para recuperar contraseña
+    forgotPassword() {
+      Swal.fire({
+        title: '¿Olvidaste tu contraseña?',
+        html: '<input id="swal-input1" class="swal2-input" placeholder="Correo electrónico">',
+        focusConfirm: false,
+        preConfirm: () => {
+          const email = Swal.getPopup().querySelector('#swal-input1').value;
+          if (!email) {
+            Swal.showValidationMessage('Por favor, ingresa tu correo electrónico');
+          } else {
+            this.verifyEmail(email);
+          }
+        },
+      });
+    },
+    //Verificar si el email se encuentra registrado
+    verifyEmail(email) {
+      const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
+      const user = usuarios.find(user => user.email === email);
+
+      if (user) {
+        this.chooseSecurityQuestion(email);
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Correo electrónico no registrado',
+          showCloseButton: true,
+        });
+      }
+    },
+    //Preguntas de recuperación
+    chooseSecurityQuestion(email) {
+      Swal.fire({
+        title: 'Selecciona una pregunta de seguridad',
+        input: 'select',
+        inputOptions: {
+          pregunta1: '¿Cuál es tu comida favorita?',
+          pregunta2: '¿Cuál es el nombre de tu mascota?',
+          pregunta3: '¿En qué ciudad naciste?'
+        },
+        inputPlaceholder: 'Selecciona una pregunta',
+        showCancelButton: true,
+        focusConfirm: false,
+        preConfirm: (selectedQuestion) => {
+          if (!selectedQuestion) {
+            Swal.showValidationMessage('Debes seleccionar una pregunta');
+            return false;
+          } else {
+            const selectedQuestionText = this.getQuestionText(selectedQuestion);
+            this.answerSecurityQuestion(email, selectedQuestion, selectedQuestionText);
+          }
+        }
+      });
+    },
+    //Escribir respuesta
+    answerSecurityQuestion(email, selectedQuestion, selectedQuestionText) {
+      Swal.fire({
+        title: selectedQuestionText,
+        html: '<input id="swal-input2" class="respuesta" placeholder="Respuesta" type="text">',
+        focusConfirm: false,
+        preConfirm: () => {
+          const answer = Swal.getPopup().querySelector('#swal-input2').value;
+          if (!answer) {
+            Swal.showValidationMessage('Debes ingresar una respuesta');
+            return false;
+          } else {
+            this.verifySecurityAnswer(email, selectedQuestion, answer);
+          }
+        }
+      });
+    },
+    //Verifca si la respuesta de seguridad es correcta
+    verifySecurityAnswer(email, selectedQuestion, answer) {
+      const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
+      const user = usuarios.find(user => user.email === email);
+      if (user && user.respuestas[selectedQuestion.replace('pregunta', '') - 1] === answer) {
+        Swal.fire('Éxito', 'Respuesta de seguridad correcta', 'success').then(() => {
+          this.updatePassword(email);
+        });
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Respuesta de seguridad incorrecta',
+          showCloseButton: true,
+        });
+      }
+    },
+    //Se procede con el cambio de contraseña
+    updatePassword(email) {
+      Swal.fire({
+        title: 'Actualizar Contraseña',
+        html: `
+          <div class="input-contenedor">
+            <i class="fas fa-key icon"></i>
+            <input id="newPassword" class="respuesta" type="password" placeholder="Nueva contraseña" required>
+            <button type="button" class="toggle" @click="togglePasswordVisibility">
+              <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+          <div class="input-contenedor">
+            <i class="fas fa-key icon"></i>
+            <input id="confirmPassword" class="respuesta" type="password" placeholder="Confirmar contraseña" required>
+            <button type="button" class="toggle" @click="togglePasswordVisibility">
+              <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+        `,
+        focusConfirm: false,
+        preConfirm: () => {
+          const newPassword = Swal.getPopup().querySelector('#newPassword').value;
+          const confirmPassword = Swal.getPopup().querySelector('#confirmPassword').value;
+          if (newPassword !== confirmPassword) {
+            Swal.showValidationMessage('Las contraseñas no coinciden');
+            return false;
+          } else {
+            // Obtener y actualizar solo la contraseña del usuario
+            const usuarios = JSON.parse(localStorage.getItem('usuarios')) || [];
+            const user = usuarios.find(user => user.email === email);
+            if (user) {
+              user.password = newPassword;
+              localStorage.setItem('usuarios', JSON.stringify(usuarios));
+              Swal.fire('Éxito', 'Contraseña actualizada correctamente', 'success');
+            }
+          }
+        }
+      });
+    },
+    getQuestionText(questionKey) {
+      switch (questionKey) {
+        case 'pregunta1':
+          return '¿Cuál es tu comida favorita?';
+        case 'pregunta2':
+          return '¿Cuál es el nombre de tu mascota?';
+        case 'pregunta3':
+          return '¿En qué ciudad naciste?';
+        default:
+          return '';
+      }
+    },
+  }
+};
+</script>
+
+
+
+<style scoped>
+/* Librerias y estilos importados */
+@import '../assets/estilos/formulario.css';
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&display=swap');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.0/css/all.min.css');
+
+.boton-active {
+  width: 50%;
+  padding: 10px;
+  background-color: rgb(29, 214, 100);
+  color: #ffff;
+  border: none;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 17px;
+  border: 2px solid #3b3a3a;
+  font-family: 'Oswald', sans-serif;
+  font-weight: bold;
+}
+
+.boton-active:hover {
+  background-color: rgb(63, 156, 99);
+}
+
+.boton-disabled {
+  background-color: #e48080;
+  color: #000;
+  cursor: not-allowed;
+  border: 2px solid #3b3a3a;
+  border-radius: 17px;
+  font-size: 15px;
+  font-weight: normal;
+}
+
+.boton-disabled:hover {
+  background-color: #e25959;
+  color: #000;
+  cursor: not-allowed;
+  border: 2px solid #3b3a3a;
+  border-radius: 17px;
+}
+
+.swal2-title {
+  font-family: 'Oswald', sans-serif;
+  font-weight: bold;
+}
+
+.swal2-input,
+.swal2-select {
+  font-family: 'Oswald', sans-serif;
+}
+
+.respuesta {
+  width: calc(50%);
+  padding: 15px 40px;
+  font-size: 15px;
+  border: 1px solid #009292;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.swal2-content {
+  font-family: 'Oswald', sans-serif;
+}
+
+.swal2-modal {
+  border-radius: 10px;
+}
+
+.boton{
+  margin-top:-35px; /* Ajusta el margen superior */
+  margin-bottom: 20px; /* Ajusta el margen inferior */
+
+}
+
+.boton a {
+  color: #009292;
+  font-size: 15px;
+  text-align: left;
+}
+
+.boton a:hover{
+  color: green;
+}
+</style>

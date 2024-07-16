@@ -1,0 +1,265 @@
+<template>
+  <!-- Botón de Menú -->
+  <div class="menu-btn" @click.stop="toggleMenu">
+    <i class="fas fa-bars fa-2x"></i>
+  </div>
+
+  <!-- Navegación -->
+  <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+    <!-- Marca -->
+    <router-link to="/index" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+    <!-- Navegación Izquierda -->
+    <ul class="nav-menu" :class="{ 'show': menuOpen }">
+      <li><router-link to="" class="open">Crear Encuesta</router-link></li>
+    </ul>
+  </nav>
+  <div class="container">
+    <h1 class="titulo" id="tituloPrincipal">SISTEMA DE ENCUESTAS</h1>
+    <!-- Formulario de Encuesta -->
+    <div class="input-contenedor">
+      <input type="text" class="encuesta-input" v-model="tituloEncuesta" placeholder="Título de la encuesta" required>
+    </div>
+    <div class="fecha">
+      <h1>Fecha y hora límite:</h1>
+      <input type="datetime-local" id="fechaHoraLimite" name="fechaHoraLimite" v-model="fechaLimite" :min="minFechaLimite" class="fecha-input" required>
+    </div>
+    <div class="respond">
+      <h1>Contraseña :</h1>
+      <label class="h1" for="password"></label>
+      <input class="pass" type="password" id="password" v-model="password" placeholder="Coloca una contraseña para responder la encuesta" required>
+    </div>
+    <div class="encuesta-container">
+      <div class="preguntas-section">
+        <div v-for="(pregunta, pIndex) in preguntas" :key="pIndex" class="pregunta-container" :draggable="true" @dragstart="dragStart(pIndex)" @dragover.prevent @drop="dropItem(pIndex)">
+          <div class="container1">
+            <div class="pregunta-item">
+              <div class="pregunta-header">
+                <span class="pregunta-numero">{{ pIndex + 1 }}</span>
+                <input v-model="pregunta.texto" type="text" class="pregunta-input" placeholder="Ingrese la pregunta">
+                <select v-model="pregunta.tipo" class="pregunta-tipo">
+                  <option value=""></option>
+                  <option value="parrafo">Párrafo</option>
+                  <option value="opcion-multiple">Opción Múltiple</option>
+                </select>
+              </div>
+              <div v-if="pregunta.tipo === 'opcion-multiple'" class="opciones-multiple">
+                <div class="opcion-items">
+                  <div v-for="(opcion, oIndex) in pregunta.opciones" :key="oIndex" class="opcion-item">
+                    <input :value="opcion" @input="updateOpcion(pregunta, oIndex, $event)" type="text" class="opcion-input" placeholder="Opción">
+                    <button type="button" @click="eliminarOpcion(pregunta, oIndex)">X</button>
+                  </div>
+                </div>
+                <button type="button" @click="agregarOpcion(pregunta)">+ Añadir Opción</button>
+              </div>
+              <div v-if="pregunta.tipo === 'parrafo'" class="pregunta-respuesta">
+                <textarea v-model="pregunta.respuesta" class="respuesta-texto" placeholder="Ingrese la respuesta de texto" disabled></textarea>
+              </div>
+            </div>
+            <i class="fas fa-trash-alt eliminar-pregunta" @click="eliminarPregunta(pIndex)"></i>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="agregar-pregunta" @click="agregarPregunta">
+        <i class="fas fa-plus-circle">Agregar Pregunta</i> <!-- Icono de Font Awesome -->
+      </button>
+    </div>
+    <button class="crear-encuesta" type="button" @click="submitEncuesta">Crear Encuesta</button>
+  </div>
+</template>
+
+<script>
+import Swal from 'sweetalert2';
+
+export default {
+  name: 'EncuestaVue',
+  data() {
+    return {
+      tituloEncuesta: '',
+      fechaLimite: '',
+      preguntas: [],
+      dragIndex: null,
+      menuOpen: false,
+      profileMenuOpen: false,
+      password: '',
+      usuarioActual: null,
+      minFechaLimite: new Date().toISOString().slice(0, 16) // Establecer la fecha y hora mínima para el campo datetime-local
+    };
+  },
+  created() {
+    // Intenta recuperar el usuario actual desde localStorage al cargar el componente
+    const usuarioActual = localStorage.getItem('usuarioActual');
+    if (usuarioActual) {
+      this.usuarioActual = usuarioActual;
+    } else {
+      // Manejo si no se encuentra un usuario actual en localStorage (opcional)
+      // Redireccionar o manejar como corresponda si no hay un usuario logueado
+    }
+  },
+  methods: {
+    agregarPregunta() {
+      this.preguntas.push({
+        texto: '',
+        tipo: '',
+        opciones: []
+      });
+    },
+    eliminarPregunta(index) {
+      this.preguntas.splice(index, 1);
+    },
+    agregarOpcion(pregunta) {
+      if (!pregunta.opciones) {
+        this.$set(pregunta, 'opciones', []);
+      }
+      pregunta.opciones.push('');
+    },
+    eliminarOpcion(pregunta, index) {
+      pregunta.opciones.splice(index, 1);
+    },
+    updateOpcion(pregunta, index, event) {
+      pregunta.opciones[index] = event.target.value;
+    },
+    dragStart(index) {
+      this.dragIndex = index;
+    },
+    dropItem(index) {
+      const pregunta = this.preguntas[this.dragIndex];
+      this.preguntas.splice(this.dragIndex, 1);
+      this.preguntas.splice(index, 0, pregunta);
+      this.dragIndex = null;
+    },
+    toggleMenu() {
+      this.menuOpen = !this.menuOpen;
+    },
+    toggleProfileMenu() {
+      this.profileMenuOpen = !this.profileMenuOpen;
+    },
+    cerrarSesion() {
+      // Limpiar localStorage y redirigir al usuario a la página de inicio de sesión
+      localStorage.removeItem('usuarioActual');
+      this.$router.push('/login');
+    },
+    validarDatosEncuesta() {
+      if (!this.tituloEncuesta || !this.fechaLimite || !this.password) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Por favor, complete todos los campos',
+        });
+        return false;
+      }
+
+      if (new Date(this.fechaLimite) < new Date()) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Seleccione una fecha y hora posterior a la actual.',
+        });
+        return false;
+      }
+
+      for (const pregunta of this.preguntas) {
+        if (!pregunta.texto || !pregunta.tipo) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Todas las preguntas deben tener un texto y un tipo.',
+          });
+          return false;
+        }
+
+        if (pregunta.tipo === 'opcion-multiple' && pregunta.opciones.length === 0) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Las preguntas de opción múltiple deben tener al menos una opción.',
+          });
+          return false;
+        }
+      }
+
+      return true;
+    },
+    submitEncuesta() {
+      // Verificar si el usuario está definido
+      if (!this.usuarioActual) {
+        alert('No hay usuario logueado.');
+        return;
+      }
+
+      const encuestaData = {
+        titulo: this.tituloEncuesta,
+        fechaLimite: this.fechaLimite,
+        preguntas: this.preguntas,
+        password: this.password,
+        usuario: this.usuarioActual // Incluir el usuario actual en los datos de la encuesta
+      };
+
+      if (!this.validarDatosEncuesta()) {
+        return;
+      }
+
+      // Guardar los datos de la encuesta en localStorage
+      let encuestas = JSON.parse(localStorage.getItem('encuestas')) || [];
+      encuestas.push(encuestaData);
+      localStorage.setItem('encuestas', JSON.stringify(encuestas));
+
+      // Mostrar alerta de éxito usando SweetAlert2
+      Swal.fire({
+        icon: 'success',
+        title: 'Encuesta creada con éxito',
+        text: 'Tu encuesta ha sido creada satisfactoriamente.',
+        confirmButtonText: 'Aceptar'
+      });
+
+      this.$router.push('/index');
+    }
+  }
+};
+</script>
+  
+  <style scoped>
+  @import '../assets/estilos/encuesta.css';
+  
+  .container {
+    margin-top: 150px;
+    background-color: white;
+    border-radius: 20px;
+    width: 60%;
+    padding-bottom: 50px;
+    box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.3); /* Sombras */
+
+  }
+.input-contenedor{
+  justify-content: center;
+  border-color: aqua
+}
+  .titulo {
+    color: #009292; /* Color del texto */
+    padding-top: 40px;
+    padding-bottom: 20px
+  }
+  .espacio {
+    margin-top: 100px;
+  }
+  .pregunta-header {
+    display: flex;
+    align-items: center;
+  }
+  .pregunta-numero {
+    margin-right: 10px;
+  }
+  .draggable {
+    cursor: move;
+    user-select: none;
+  }
+  input[type="text"]:focus,
+  input[type="password"]:focus,
+
+input[type="datetime-local"]:focus {
+ border-color: #329977; /* Cambia el color del borde al enfocar el campo */
+ outline: none; /* Elimina el contorno predeterminado al enfocar */
+ box-shadow: 0 0 20px #329977; /* Agrega una sombra alrededor del campo al enfocar */
+}
+
+  </style>
+  

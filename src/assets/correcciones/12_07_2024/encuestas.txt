@@ -1,0 +1,320 @@
+<template>
+  <!-- Botón de Menú -->
+  <div class="menu-btn" @click.stop="toggleMenu">
+    <i class="fas fa-bars fa-2x"></i>
+  </div>
+
+    <!-- Navegación -->
+    <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+      <!-- Marca -->
+      <router-link to="/index" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+      <!-- Navegación Izquierda -->
+      <ul class="nav-menu" :class="{ 'show': menuOpen }">
+        <li><router-link to="/index" >Inicio</router-link></li>
+        <li><router-link to="/resolver" class="open">Encuestas Disponibles</router-link></li>
+        <li class="profile-menu">
+          <router-link to="" @click.stop="toggleProfileMenu">Perfil</router-link>
+          <ul v-if="profileMenuOpen" class="dropdown-menu" ref="profileMenu">
+            <li><router-link to="/perfil">Ver Perfil</router-link></li>
+            <li @click="cerrarSesion"><router-link to="">Cerrar Sesión</router-link></li>
+          </ul>
+        </li>
+      </ul>
+    </nav>
+  <div class="container available-surveys">
+    <h1>Responder Encuesta</h1>
+    <div v-if="encuestas.length > 0 && !encuesta">
+      <div class="survey-list">
+        <div v-for="(encuesta, index) in encuestas" :key="index" class="survey-card">
+          <div class="img"></div>
+          <h3 class="survey-title">{{ encuesta.titulo }}</h3>
+          <p class="survey-description">Creado por: {{ encuesta.creador }}</p>
+          <button @click="mostrarPreguntas(index)" class="btn btn-resolver">
+            <i class="fas fa-chart-line"> Resolver</i>
+          </button>
+          <button @click="verResultados(encuesta)" class="btn btn-ver-resultados">
+        <i class="fas fa-poll"></i> Ver Resultados
+      </button>
+          <p v-if="encuesta.vencida" class="encuesta-vencida">Encuesta vencida</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mostrar preguntas de la encuesta seleccionada -->
+    <div v-if="encuesta" class="encuesta-detalle">
+      <h2>{{ encuesta.titulo }}</h2>
+      <p>Fecha límite: {{ encuesta.fechaLimite }}</p>
+      <div v-for="(pregunta, pIndex) in encuesta.preguntas" :key="pIndex" class="pregunta-container">
+        <div>
+          <label>{{ pregunta.texto }}</label>
+          <div v-if="pregunta.tipo === 'opcion-multiple'">
+            <div v-for="(opcion, oIndex) in pregunta.opciones" :key="oIndex">
+              <input type="radio" :name="'pregunta' + pIndex" :value="opcion" v-model="respuestas[pIndex]" />
+              <label>{{ opcion }}</label>
+            </div>
+          </div>
+          <div v-else-if="pregunta.tipo === 'parrafo'">
+            <textarea v-model="respuestas[pIndex]" placeholder="Ingrese su respuesta aquí"></textarea>
+          </div>
+        </div>
+      </div>
+      <button @click="submitRespuestas">Enviar Respuestas</button>
+      <button @click="volverALista">Volver a la lista de encuestas</button>
+    </div>
+
+    <!-- Mensaje si no hay encuestas disponibles -->
+    <div v-else-if="encuestas.length === 0">
+      <p>No hay encuestas disponibles para responder.</p>
+    </div>
+  </div>
+</template>
+
+<script>
+import Swal from 'sweetalert2';
+
+export default {
+  name: 'ResponderEncuestaVue',
+  data() {
+    return {
+      encuestas: [],
+      encuesta: null,
+      respuestas: [],
+      usuarioActual: null,
+      menuOpen: false,
+      profileMenuOpen: false,
+      encuestaRespondida: false,
+    };
+  },
+  created() {
+    const usuarioActual = localStorage.getItem('usuarioActual');
+    if (usuarioActual) {
+      this.usuarioActual = usuarioActual;
+    }
+    this.obtenerEncuestasLocalStorage();
+  },
+  methods: {
+    toggleProfileMenu() {
+      this.profileMenuOpen = !this.profileMenuOpen;
+    },
+    cerrarSesion() {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userData');
+      this.$router.push('/login');
+    },
+    obtenerEncuestasLocalStorage() {
+      const encuestas = JSON.parse(localStorage.getItem('encuestas')) || [];
+      this.encuestas = encuestas.map(encuesta => {
+        const creador = JSON.parse(encuesta.usuario);
+        return {
+          ...encuesta,
+          creador: creador.nombre,
+          vencida: new Date(encuesta.fechaLimite) < new Date()
+        };
+      });
+    },
+    mostrarPreguntas(index) {
+      const encuesta = this.encuestas[index];
+      
+      if (encuesta.vencida) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Encuesta vencida',
+          text: 'Esta encuesta ha vencido. No se puede responder.'
+        });
+        return;
+      }
+      
+      if (this.encuestaRespondida) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Encuesta ya respondida',
+          text: 'Usted ya ha respondido esta encuesta anteriormente.'
+        });
+        return;
+      }
+      
+      Swal.fire({
+        title: 'Contraseña para Resolver',
+        input: 'password',
+        inputAttributes: {
+          autocapitalize: 'off',
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Aceptar',
+        cancelButtonText: 'Cancelar',
+        showLoaderOnConfirm: true,
+      }).then((result) => {
+        if (result.isConfirmed) {
+          const password = result.value;
+          if (password === encuesta.password) {
+            this.encuesta = encuesta;
+            this.respuestas = this.encuesta.preguntas.map(() => '');
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'Error',
+              text: 'Contraseña incorrecta',
+            });
+          }
+        }
+      }).catch((error) => {
+        console.log('ERROR', error);
+      });
+    },
+    submitRespuestas() {
+      if (this.respuestas.some(respuesta => respuesta === '')) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Respuestas incompletas',
+          text: 'Debe responder todas las preguntas antes de enviar.',
+        });
+        return;
+      }
+      
+      if (this.encuesta && !this.encuestaRespondida) {
+        const respuestasData = {
+          encuestaId: this.encuesta.titulo,
+          usuario: this.usuarioActual,
+          respuestas: this.respuestas
+        };
+
+        // Guardar respuestas en localStorage
+        let respuestas = JSON.parse(localStorage.getItem('respuestas')) || [];
+        respuestas.push(respuestasData);
+        localStorage.setItem('respuestas', JSON.stringify(respuestas));
+
+        // Marcar la encuesta como respondida por este usuario
+        this.encuestaRespondida = true;
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Respuestas guardadas exitosamente',
+          text: 'Gracias por responder la encuesta.',
+        });
+
+        // Limpiar datos de encuesta seleccionada
+        this.encuesta = null;
+        this.respuestas = [];
+      }
+    },
+    volverALista() {
+      this.encuesta = null;
+      this.respuestas = [];
+    }
+  },
+};
+</script>
+
+
+
+<style scoped>
+.encuesta-vencida{
+  color: red;
+}
+.encuesta-detalle p,h2{
+  color: black
+}
+/* Estilos para las encuestas disponibles */
+.img {
+  background-color: #0c9191;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  padding: 65px;
+  background-image: url('/src/assets/img.jpeg');
+  width: 350px;
+  transition: transform 0.3s ease;
+  margin-left: -20px;
+  margin-top: -22px;
+}
+
+.available-surveys {
+  margin-top: 150px;
+  text-align: center;
+}
+
+.survey-list {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 50px;
+}
+
+.survey-card {
+  background: white;
+  /* Color de fondo*/
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease;
+  padding-bottom: 20px;
+  margin-right: 20px;
+  width: 350px;
+}
+
+.survey-card:hover {
+  transform: translateY(-5px);
+}
+
+.survey-title {
+  font-size: 24px;
+  margin-bottom: 15px;
+  margin-top: 15px;
+  color: black;
+  text-align: left;
+}
+
+.survey-description {
+  font-size: 16px;
+  margin-bottom: 20px;
+  color: black;
+  text-align: left;
+}
+
+.survey-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.survey-actions .btn {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  margin-right: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  color: white;
+  width: 80%;
+  justify-content: center;
+  /* Centrar icono horizontalmente */
+}
+
+.btn-edit {
+  background-color: #007bff;
+}
+
+.btn-edit:hover {
+  background-color: #0056b3;
+}
+
+.btn-delete {
+  background-color: #dc3545;
+}
+
+.btn-delete:hover {
+  background-color: #c82333;
+}
+
+.btn-resolver {
+  background-color: #007bff;
+  justify-content: center;
+}
+
+.btn-resolver:hover {
+  background-color: #0056b3;
+}
+</style>

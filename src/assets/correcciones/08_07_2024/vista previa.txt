@@ -1,0 +1,142 @@
+<template>
+    <div class="vista-previa">
+      <div class="fondo">
+        <h2>{{ titulo }}</h2>
+      </div>
+      <p>Hola, {{ usuario.nombre }}. Cuando envíe este formulario, el propietario verá su nombre y dirección de correo electrónico.</p>
+      <div v-for="(pregunta, index) in preguntasLocales" :key="index">
+        <p>{{ index + 1 }}. {{ pregunta.texto }}</p>
+        <div v-if="pregunta.tipo === 'opcion-multiple'">
+          <ul>
+            <li v-for="(opcion, i) in pregunta.opciones" :key="i">
+              <button @click="seleccionarOpcion(index, i)">
+                <span class="opcion-icono"></span> <!-- Icono de círculo -->
+                <span>{{ opcion }}</span> <!-- Texto de la opción -->
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div v-if="pregunta.tipo === 'parrafo'">
+          <textarea v-model="pregunta.respuesta" placeholder="Respuesta de párrafo"></textarea>
+        </div>
+      </div>
+      <router-link to="" class="volver">Enviar</router-link>
+      <button @click="$emit('volver')"><router-link to="" class="volver1">Volver</router-link></button>
+    </div>
+  </template>
+  
+  <script>
+  import axios from 'axios';
+  
+  export default {
+    props: {
+      titulo: String,
+      fechaLimite: String,
+      preguntas: Array
+    },
+    data() {
+      return {
+        usuario: {},
+        preguntasLocales: []
+      };
+    },
+    created() {
+      this.cargarDatosUsuario();
+      this.preguntasLocales = JSON.parse(JSON.stringify(this.preguntas));
+    },
+    methods: {
+      cargarDatosUsuario() {
+        axios.get('http://localhost:5000/api/perfil', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+        .then(response => {
+          const { nombre } = response.data.usuario;
+          this.usuario = { nombre };
+        })
+        .catch(error => {
+          console.error('Error al cargar datos del usuario:', error.message);
+        });
+      },
+      seleccionarOpcion(preguntaIndex, opcionIndex) {
+        this.preguntasLocales[preguntaIndex].respuesta = this.preguntasLocales[preguntaIndex].opciones[opcionIndex];
+      }
+    }
+  };
+  </script>
+  
+  <style scoped>
+  .volver {
+    background-color: #0c9191;
+    width: 10%;
+    padding: 10px;
+    color: #fff;
+    text-align: center;
+    font-size: 18px;
+    font-family: 'Oswald', sans-serif;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    background-color: #009292;
+    display: inline-block;
+    margin-right: 10px;
+    margin-left: 40px;
+    border-radius: 10px;
+  }
+  
+  .vista-previa {
+    margin-top: 90px;
+    border-radius: 10px;
+    border-top-left-radius: 40px;
+    border-top-right-radius: 40px;
+    background-color: white;
+  }
+  
+  .vista-previa h2 {
+    color: white;
+    text-align: left;
+    padding: 20px;
+  }
+  
+  .vista-previa h3, .vista-previa p {
+    color: black;
+    padding-left: 40px;
+    padding-top: 20px;
+    font-size: 20px;
+  }
+  
+  .fondo {
+    background-color: #0c9191;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 20px;
+  }
+  
+  ul li {
+    color: black;
+    list-style: none;
+  }
+  
+  button {
+    background-color: transparent;
+    border: none;
+    padding: 5px;
+    margin: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+  
+  button:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .opcion-icono {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #0c9191;
+    margin-right: 10px;
+  }
+  </style>
+  

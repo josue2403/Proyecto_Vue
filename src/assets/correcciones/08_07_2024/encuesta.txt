@@ -1,0 +1,230 @@
+<template>
+  <!-- Botón de Menú -->
+  <div class="menu-btn" @click.stop="toggleMenu">
+    <i class="fas fa-bars fa-2x"></i>
+  </div>
+
+  <!-- Navegación -->
+  <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+    <!-- Marca -->
+    <router-link to="/index" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+    <!-- Navegación Izquierda -->
+    <ul class="nav-menu" :class="{ 'show': menuOpen }">
+      <li><router-link to="/index" class="open">Inicio</router-link></li>
+      <li><router-link to="/view">Mis Encuestas</router-link></li>
+      <li><router-link to="/survey-available">Encuestas Disponibles</router-link></li>
+      <li><router-link to="/resultado">Resultados</router-link></li>
+      <li class="profile-menu">
+        <router-link to="" @click.stop="toggleProfileMenu">Perfil</router-link>
+        <ul v-if="profileMenuOpen" class="dropdown-menu" ref="profileMenu">
+          <li><router-link to="/perfil">Ver Perfil</router-link></li>
+          <li @click="cerrarSesion"><router-link to="">Cerrar Sesión</router-link></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
+  <div class="container">
+    <h1 id="tituloPrincipal">SISTEMA DE ENCUESTAS</h1>
+    
+    <!-- Mostrar la Vista Previa o el Formulario de Encuesta -->
+    <div v-if="vistaPrevia">
+      <VistaPrevia 
+        :titulo="tituloEncuesta" 
+        :fechaLimite="fechaLimite" 
+        :preguntas="preguntas" 
+        @volver="toggleVistaPrevia" 
+      />
+    </div>
+    <div v-else>
+      <input type="text" class="encuesta-input" v-model="tituloEncuesta" placeholder="Título de la encuesta" required>
+      <div class="fecha">
+        <h1>Fecha y hora límite:</h1>
+        <input type="datetime-local" id="fechaHoraLimite" name="fechaHoraLimite" v-model="fechaLimite" class="fecha-input" required>
+      </div>
+      <div class="encuesta-container">
+        <div class="preguntas-section">
+          <div v-for="(pregunta, pIndex) in preguntas" :key="pIndex" class="pregunta-container" :draggable="true" @dragstart="dragStart(pIndex)" @dragover.prevent @drop="dropItem(pIndex)">
+            <div class="container1">
+              <div class="pregunta-item">
+                <div class="pregunta-header">
+                  <span class="pregunta-numero">{{ pIndex + 1 }}</span>
+                  <input v-model="pregunta.texto" type="text" class="pregunta-input" placeholder="Ingrese la pregunta">
+                  <select v-model="pregunta.tipo" class="pregunta-tipo">
+                    <option value=""></option>
+                    <option value="parrafo">Párrafo</option>
+                    <option value="opcion-multiple">Opción Múltiple</option>
+                  </select>
+                </div>
+                <div v-if="pregunta.tipo === 'opcion-multiple'" class="opciones-multiple">
+                  <div class="opcion-items">
+                    <div v-for="(opcion, oIndex) in pregunta.opciones" :key="oIndex" class="opcion-item">
+                      <input :value="opcion" @input="updateOpcion(pregunta, oIndex, $event)" type="text" class="opcion-input" placeholder="Opción">
+                      <button type="button" @click="eliminarOpcion(pregunta, oIndex)">X</button>
+                    </div>
+                  </div>
+                  <button type="button" @click="agregarOpcion(pregunta)">+ Añadir Opción</button>
+                </div>
+                <div v-if="pregunta.tipo === 'parrafo'" class="pregunta-respuesta">
+                  <textarea v-model="pregunta.respuesta" class="respuesta-texto" placeholder="Ingrese la respuesta de texto"></textarea>
+                </div>
+              </div>
+              <i class="fas fa-trash-alt eliminar-pregunta" @click="eliminarPregunta(pIndex)"></i>
+            </div>
+          </div>
+        </div>
+        <button type="button" @click="agregarPregunta">Agregar Pregunta</button>
+      </div>
+      <button type="button" @click="submitEncuesta">Crear Encuesta</button>
+      <button type="button" @click="toggleVistaPrevia">
+        {{ vistaPrevia ? 'Ocultar' : 'Mostrar' }} Vista Previa
+      </button>
+    </div>
+  </div>
+</template>
+
+<script>
+import axios from 'axios';
+import VistaPrevia from './VistaPrevia.vue';
+
+export default {
+  name:'Encuesta-vue',
+  components: {
+    VistaPrevia
+  },
+  data() {
+    return {
+      tituloEncuesta: '',
+      fechaLimite: '',
+      preguntas: [],
+      dragIndex: null,
+      menuOpen: false,
+      profileMenuOpen: false,
+      vistaPrevia: false,
+    };
+  },
+  methods: {
+    agregarPregunta() {
+      this.preguntas.push({
+        texto: '',
+        tipo: '',
+        opciones: []
+      });
+    },
+    eliminarPregunta(index) {
+      this.preguntas.splice(index, 1);
+      this.actualizarNumerosPreguntas();
+    },
+    agregarOpcion(pregunta) {
+      if (!pregunta.opciones) {
+        this.$set(pregunta, 'opciones', []);
+      }
+      pregunta.opciones.push('');
+    },
+    eliminarOpcion(pregunta, index) {
+      pregunta.opciones.splice(index, 1);
+    },
+    updateOpcion(pregunta, index, event) {
+      pregunta.opciones[index] = event.target.value;
+    },
+    dragStart(index) {
+      this.dragIndex = index;
+    },
+    dropItem(index) {
+      const pregunta = this.preguntas[this.dragIndex];
+      this.preguntas.splice(this.dragIndex, 1);
+      this.preguntas.splice(index, 0, pregunta);
+      this.dragIndex = null;
+      this.actualizarNumerosPreguntas();
+    },
+    actualizarNumerosPreguntas() {
+      // Este método se puede mejorar si es necesario
+    },
+    toggleMenu() {
+      this.menuOpen = !this.menuOpen;
+    },
+    toggleProfileMenu() {
+      this.profileMenuOpen = !this.profileMenuOpen;
+    },
+    cerrarSesion() {
+      localStorage.removeItem('token');
+      this.$router.push('/login');
+    },
+    validarDatosEncuesta(encuestaData) {
+      if (!encuestaData.titulo || !encuestaData.fechaLimite) {
+        alert('El título y la fecha límite son obligatorios');
+        return false;
+      }
+      
+      const fechaActual = new Date();
+      const fechaLimite = new Date(encuestaData.fechaLimite);
+
+      if (fechaLimite <= fechaActual) {
+        alert('La fecha límite debe ser posterior a la fecha actual');
+        return false;
+      }
+
+      for (const pregunta of encuestaData.preguntas) {
+        if (!pregunta.texto) {
+          alert('Todas las preguntas deben tener texto');
+          return false;
+        }
+        if (pregunta.tipo === 'opcion-multiple' && pregunta.opciones.some(opcion => !opcion)) {
+          alert('Todas las opciones deben tener texto');
+          return false;
+        }
+      }
+      return true;
+    },
+    submitEncuesta() {
+      const encuestaData = {
+        titulo: this.tituloEncuesta,
+        fechaLimite: this.fechaLimite,
+        preguntas: this.preguntas
+      };
+
+      if (!this.validarDatosEncuesta(encuestaData)) {
+        return;
+      }
+
+      const token = localStorage.getItem('token');
+      axios.post('/api/crear-encuesta', encuestaData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }).then(response => {
+        alert('Encuesta creada exitosamente');
+        console.respondse(response);
+              this.$router.push('/view');
+      }).catch(error => {
+        alert('Error al crear la encuesta');
+        console.error(error)
+      });
+    },
+    toggleVistaPrevia() {
+      this.vistaPrevia = !this.vistaPrevia;
+    }
+  }
+};
+</script>
+
+<style scoped>
+@import '../assets/estilos/encuesta.css';
+
+.espacio {
+  margin-top: 100px;
+}
+
+.pregunta-header {
+  display: flex;
+  align-items: center;
+}
+
+.pregunta-numero {
+  margin-right: 10px;
+}
+
+.draggable {
+  cursor: move;
+  user-select: none;
+}
+</style>

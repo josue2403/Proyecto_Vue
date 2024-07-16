@@ -1,0 +1,503 @@
+const express = require('express');
+const mysql = require('mysql2');
+const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+
+const app = express();
+
+app.use(bodyParser.json());
+app.use(cors());
+
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'pruebaapw'
+});
+
+db.connect(err => {
+    if (err) {
+        console.error('Error al conectar a MySQL:', err);
+        throw err;
+    }
+    console.log('Conectado a la base de datos MySQL');
+});
+
+
+
+
+// Middleware de autenticación
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401);
+
+    jwt.verify(token, 'your_secret_key', (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
+// Ruta para registrar un nuevo usuario con preguntas de seguridad en una tabla
+app.post('/api/register', async (req, res) => {
+    const { nombre, email, password, respuesta1, respuesta2, respuesta3 } = req.body;
+
+    try {
+        // Generar el hash de la contraseña
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insertar el usuario en la tabla 'usuarios' y obtener el ID generado automáticamente
+        const sql = `
+            INSERT INTO usuarios (nombre, email, password, respuesta1, respuesta2, respuesta3) 
+            VALUES (?, ?, ?, ?, ?, ?);
+        `;
+        const values = [nombre, email, hashedPassword, respuesta1, respuesta2, respuesta3];
+
+        db.query(sql, values, (err, result) => {
+            if (err) {
+                console.error('Error al insertar usuario en la base de datos:', err);
+                if (err.code === 'ER_DUP_ENTRY') {
+                    return res.status(400).json({ error: 'El correo electrónico ya está registrado' });
+                }
+                return res.status(500).json({ error: 'Error interno del servidor' });
+            }
+
+            console.log('Usuario registrado correctamente');
+
+            res.status(200).json({ message: 'Usuario registrado correctamente' });
+        });
+    } catch (error) {
+        console.error('Error al registrar el usuario:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Ruta para iniciar sesión
+app.post('/api/login', (req, res) => {
+    const { email, password } = req.body;
+    db.query('SELECT * FROM usuarios WHERE email = ?', [email], (err, results) => {
+        if (err) {
+            console.error('Error al buscar el usuario:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (results.length === 0) {
+            return res.status(400).json({ message: 'Correo electrónico o contraseña incorrectos' });
+        }
+
+        const user = results[0];
+        const passwordMatch = bcrypt.compareSync(password, user.password);
+
+        if (!passwordMatch) {
+            return res.status(400).json({ message: 'Correo electrónico o contraseña incorrectos' });
+        }
+
+        const token = jwt.sign({ id: user.id, email: user.email }, 'your_secret_key', { expiresIn: '10h' });
+        res.status(200).json({ message: 'Inicio de sesión exitoso', token });
+    });
+});
+
+// Ruta para obtener datos del perfil de usuario
+app.get('/api/perfil', authenticateToken, (req, res) => {
+    const userId = req.user.id; // Obtener el ID del usuario desde el token decodificado (previamente validado)
+
+    db.query('SELECT nombre, email FROM usuarios WHERE id = ?', [userId], (err, results) => {
+        if (err) {
+            console.error('Error al obtener datos del perfil:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        const usuario = results[0];
+        res.status(200).json({ usuario });
+    });
+});
+
+
+// Ruta para obtener datos del perfil de usuario
+app.get('/api/preview', authenticateToken, (req, res) => {
+    const userId = req.user.id; // Obtener el ID del usuario desde el token decodificado (previamente validado)
+
+    db.query('SELECT nombre FROM usuarios WHERE id = ?', [userId], (err, results) => {
+        if (err) {
+            console.error('Error al obtener datos del perfil:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        const usuario = results[0];
+        res.status(200).json({ usuario });
+    });
+});
+
+
+
+// Ruta para actualizar datos del perfil de usuario
+app.put('/api/perfil', authenticateToken, (req, res) => {
+    const userId = req.user.id; // Obtener el ID del usuario desde el token decodificado (previamente validado)
+    const { nombre, email, password } = req.body;
+
+    // Verificar si se está actualizando la contraseña
+    let updateQuery;
+    let queryParams;
+    if (password) {
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        updateQuery = 'UPDATE usuarios SET nombre = ?, email = ?, password = ? WHERE id = ?';
+        queryParams = [nombre, email, hashedPassword, userId];
+    } else {
+        updateQuery = 'UPDATE usuarios SET nombre = ?, email = ? WHERE id = ?';
+        queryParams = [nombre, email, userId];
+    }
+
+    db.query(updateQuery, queryParams, (err, result) => {
+        if (err) {
+            console.error('Error al actualizar perfil:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        res.status(200).json({ message: 'Perfil actualizado correctamente' });
+    });
+    
+});
+
+// Ruta para verificar si el correo ya está registrado
+app.get('/api/check-email', (req, res) => {
+    const { email } = req.query;
+    const query = 'SELECT * FROM usuarios WHERE email = ?';
+  
+    db.query(query, [email], (err, results) => {
+      if (err) {
+        console.error('Error al verificar el correo electrónico:', err);
+        return res.status(500).json({ message: 'Error del servidor al verificar el correo electrónico.' });
+      }
+      if (results.length > 0) {
+        return res.json({ exists: true });
+      }
+      return res.json({ exists: false });
+    });
+  });
+
+
+
+// Ruta para verificar la respuesta de seguridad
+app.post('/api/verify-answer', (req, res) => {
+    const { email, question, answer } = req.body;
+  
+    // Consultar las respuestas de seguridad del usuario
+    const query = 'SELECT respuesta1, respuesta2, respuesta3 FROM usuarios WHERE email = ?';
+    db.query(query, [email], (err, results) => {
+      if (err) {
+        console.error('Error al verificar respuesta de seguridad:', err);
+        return res.status(500).json({ message: 'Error interno del servidor' });
+      }
+  
+      if (results.length === 0) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+  
+      const { respuesta1, respuesta2, respuesta3 } = results[0];
+  
+      // Comparar la respuesta proporcionada con la respuesta almacenada según la pregunta
+      let isAnswerCorrect = false;
+      if (question === 'pregunta1' && respuesta1 === answer) {
+        isAnswerCorrect = true;
+      } else if (question === 'pregunta2' && respuesta2 === answer) {
+        isAnswerCorrect = true;
+      } else if (question === 'pregunta3' && respuesta3 === answer) {
+        isAnswerCorrect = true;
+      }
+  
+      if (isAnswerCorrect) {
+        res.status(200).json({ success: true });
+      } else {
+        res.status(400).json({ success: false });
+      }
+    });
+  });
+  
+//rutas recuperar contraseña
+// Ruta para actualizar la contraseña del usuario
+app.put('/api/update-password', (req, res) => {
+    const { email, newPassword } = req.body;
+  
+    // Generar el hash de la nueva contraseña
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+  
+    // Actualizar la contraseña en la base de datos
+    const query = 'UPDATE usuarios SET password = ? WHERE email = ?';
+    db.query(query, [hashedPassword, email], (err, result) => {
+      if (err) {
+        console.error('Error al actualizar la contraseña:', err);
+        return res.status(500).json({ message: 'Error interno del servidor' });
+      }
+  
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+  
+      res.status(200).json({ message: 'Contraseña actualizada correctamente' });
+    });
+  });
+// Rutas del perfil del usuario
+app.get('/api/perfil', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+
+    db.query('SELECT nombre, email FROM usuarios WHERE id = ?', [userId], (err, results) => {
+        if (err) {
+            console.error('Error al obtener datos del perfil:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        const usuario = results[0];
+        res.status(200).json({ usuario });
+    });
+});
+
+
+// Endpoint para verificar la contraseña actual
+app.post('/api/verificar', authenticateToken, (req, res) => {
+  const userId = req.user.id; // Obtener el ID del usuario desde el token decodificado (previamente validado)
+  const { password } = req.body;
+
+  // Consultar la contraseña actual del usuario desde la base de datos
+  db.query('SELECT password FROM usuarios WHERE id = ?', [userId], (err, results) => {
+      if (err) {
+          console.error('Error al obtener contraseña del usuario:', err);
+          return res.status(500).json({ message: 'Error interno del servidor' });
+      }
+
+      if (results.length === 0) {
+          return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+
+      const user = results[0];
+      const passwordMatch = bcrypt.compareSync(password, user.password);
+
+      if (!passwordMatch) {
+          return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+      }
+
+      // Si la contraseña es correcta, enviar una respuesta exitosa
+      res.status(200).json({ message: 'Contraseña actual verificada correctamente' });
+  });
+});
+// Ruta para actualizar la contraseña del usuario
+app.put('/api/actualizar-contrasena', authenticateToken, (req, res) => {
+    const userId = req.user.id; // Obtener el ID del usuario desde el token decodificado (previamente validado)
+    const { contrasenaActual, nuevaContrasena } = req.body;
+
+    // Verificar la contraseña actual del usuario
+    db.query('SELECT password FROM usuarios WHERE id = ?', [userId], (err, results) => {
+        if (err) {
+            console.error('Error al obtener la contraseña actual del usuario:', err);
+            return res.status(500).json({ message: 'Error interno del servidor' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        const user = results[0];
+        const passwordMatch = bcrypt.compareSync(contrasenaActual, user.password);
+
+        if (!passwordMatch) {
+            return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+        }
+
+        // Encriptar la nueva contraseña
+        const hashedPassword = bcrypt.hashSync(nuevaContrasena, 10);
+
+        // Actualizar la contraseña en la base de datos
+        db.query('UPDATE usuarios SET password = ? WHERE id = ?', [hashedPassword, userId], (err, result) => {
+            if (err) {
+                console.error('Error al actualizar la contraseña:', err);
+                return res.status(500).json({ message: 'Error interno del servidor' });
+            }
+
+            if (result.affectedRows === 0) {
+                return res.status(404).json({ message: 'Usuario no encontrado' });
+            }
+
+            res.status(200).json({ message: 'Contraseña actualizada correctamente' });
+        });
+    });
+});
+
+// Ruta para crear una nueva encuesta
+// Añade esta ruta en tu servidor Express (app.js o server.js)
+
+app.post('/api/crear-encuesta', authenticateToken, (req, res) => {
+  const { titulo, fechaLimite, preguntas, password } = req.body;
+  const usuarioId = req.user.id;  // Asumiendo que el ID del usuario se obtiene del token
+
+  if (!titulo || !fechaLimite || !preguntas || !password) {
+      return res.status(400).json({ message: 'Todos los campos son obligatorios.' });
+  }
+
+  const query = `
+      INSERT INTO encuestas (usuario_id, titulo, fecha_limite, password) 
+      VALUES (?, ?, ?, ?);
+  `;
+
+  const encuestaValues = [usuarioId, titulo, fechaLimite, password];
+
+  db.query(query, encuestaValues, (err, result) => {
+      if (err) {
+          console.error('Error al insertar la encuesta:', err);
+          return res.status(500).json({ message: 'Error interno del servidor.' });
+      }
+
+      const encuestaId = result.insertId;
+
+      const preguntasPromises = preguntas.map(pregunta => {
+          return new Promise((resolve, reject) => {
+              const preguntaQuery = `
+                  INSERT INTO preguntas (encuesta_id, texto, tipo) 
+                  VALUES (?, ?, ?);
+              `;
+              const preguntaValues = [encuestaId, pregunta.texto, pregunta.tipo];
+
+              db.query(preguntaQuery, preguntaValues, (err, preguntaResult) => {
+                  if (err) {
+                      return reject(err);
+                  }
+
+                  const preguntaId = preguntaResult.insertId;
+
+                  if (pregunta.tipo === 'opcion-multiple') {
+                      const opcionesPromises = pregunta.opciones.map(opcion => {
+                          return new Promise((resolve, reject) => {
+                              const opcionQuery = `
+                                  INSERT INTO opciones (pregunta_id, texto) 
+                                  VALUES (?, ?);
+                              `;
+                              const opcionValues = [preguntaId, opcion];
+
+                              db.query(opcionQuery, opcionValues, (err, opcionResult) => {
+                                  if (err) {
+                                      return reject(err);
+                                  }
+                                  resolve(opcionResult);
+                              });
+                          });
+                      });
+
+                      Promise.all(opcionesPromises)
+                          .then(() => resolve())
+                          .catch(err => reject(err));
+                  } else {
+                      resolve();
+                  }
+              });
+          });
+      });
+
+      Promise.all(preguntasPromises)
+          .then(() => res.status(200).json({ message: 'Encuesta creada exitosamente.' }))
+          .catch(err => {
+              console.error('Error al insertar preguntas u opciones:', err);
+              res.status(500).json({ message: 'Error interno del servidor.' });
+          });
+  });
+});
+// Ruta para obtener todas las encuestas de un usuario
+
+
+// Ruta para obtener todas las encuestas de un usuario
+app.get('/api/encuestas', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+
+    const query = `
+        SELECT e.id, e.titulo, u.nombre as creador
+        FROM encuestas e
+        JOIN usuarios u ON e.usuario_id = u.id
+        WHERE e.usuario_id = ?
+    `;
+
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            console.error('Error al obtener encuestas del usuario:', err);
+            return res.status(500).json({ message: 'Error interno del servidor.' });
+        }
+
+        res.status(200).json({ encuestas: results });
+    });
+});
+
+app.get('/api/encuestas-todas', authenticateToken, (req, res) => {
+    const query = `
+      SELECT e.id, e.titulo, u.nombre as creador
+      FROM encuestas e
+      JOIN usuarios u ON e.usuario_id = u.id
+    `;
+  
+    db.query(query, (err, results) => {
+      if (err) {
+        console.error('Error al obtener encuestas:', err);
+        return res.status(500).json({ message: 'Error interno del servidor.' });
+      }
+  
+      res.status(200).json({ encuestas: results });
+    });
+  });
+
+
+// Endpoint para eliminar encuesta
+app.delete('/api/encuestas/:id', (req, res) => {
+    const encuestaId = req.params.id;
+  
+    // Iniciar una transacción
+    db.beginTransaction(err => {
+      if (err) {
+        return res.status(500).json({ error: 'Error al iniciar transacción' });
+      }
+  
+      // Eliminar la encuesta (y sus datos relacionados gracias a ON DELETE CASCADE)
+      const deleteEncuestaQuery = 'DELETE FROM encuestas WHERE id = ?';
+      db.query(deleteEncuestaQuery, [encuestaId], (err, result) => {
+        if (err) {
+          return db.rollback(() => {
+            res.status(500).json({ error: 'Error al eliminar encuesta' });
+          });
+        }
+  
+        // Confirmar la transacción
+        db.commit(err => {
+          if (err) {
+            return db.rollback(() => {
+              res.status(500).json({ error: 'Error al confirmar transacción' });
+            });
+          }
+  
+          res.json({ message: 'Encuesta eliminada correctamente' });
+        });
+      });
+    });
+  });
+
+
+  
+
+
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Servidor backend en ejecución en el puerto ${PORT}`);
+});

@@ -1,0 +1,765 @@
+<template>
+  <!-- Botón de Menú -->
+  <div class="menu-btn" @click="toggleMenu">
+    <i class="fas fa-bars fa-2x"></i>
+  </div>
+
+  <!-- Navegación -->
+  <nav class="nav-main" :class="{ 'nav-open': menuOpen }">
+    <router-link to="/index" class="nav-brand">DANI<span class="logo-highlight">QUIZ</span></router-link>
+
+    <!-- Marca -->
+    <!-- Navegación Izquierda -->
+    <ul class="nav-menu" :class="{ 'show': menuOpen }">
+      <li><router-link to="/index">Inicio</router-link></li>
+      <li><router-link to="/resultado">Mis Encuestas</router-link></li>
+      <li><router-link to="/survey-available">Encuestas Disponibles</router-link></li>
+      <li><router-link to="/resultado">Resultados</router-link></li>
+      <li><router-link to="/perfil" class="open">Perfil</router-link></li>
+    </ul>
+  </nav>
+  <div class="perfil">
+    <div v-if="!changingPassword">
+      <div class="datos">
+        <h1>Datos del Usuario</h1>
+        <div class="input-contenedor">
+          <label for="nombre">NOMBRE :</label>
+          <div class="input-wrapper">
+            <i class="fas fa-user icon"></i>
+            <input type="text" id="nombre" required v-model="usuario.nombre" @input="validarNombre" :disabled="!editing"
+              :class="{ 'editing': editing }">
+          </div>
+        </div>
+        <div class="input-contenedor">
+          <label for="email">CORREO ELECTRÓNICO :</label>
+          <div class="input-wrapper">
+            <i class="fas fa-envelope icon"></i>
+            <input type="email" id="email" v-model="usuario.email" @input="validarEmail" :disabled="!editing"
+              :class="{ 'editing': editing }">
+          </div>
+          <div class="error-message" v-if="emailInvalido">{{ mensajeEmail }}</div>
+        </div>
+        <div v-if="editing">
+
+          <div class="input-contenedor">
+            <label for="currentPassword">CONFIRMAR CONTRASEÑA :</label>
+            <div class="input-wrapper">
+              <i class="fas fa-lock icon"></i>
+              <input :type="showCurrentPassword ? 'text' : 'password'" id="currentPassword" v-model="currentPassword"
+                :class="{ 'editing': editing }">
+              <button type="button" class="toggle-icon" @click="toggleCurrentPasswordVisibility">
+                <i :class="showCurrentPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="acciones">
+        <div v-if="!editing" class="botones-no-editar">
+          <button class="boton-accion" @click="editar">Editar</button>
+          <button class="boton-accion" @click="iniciarCambioContrasena">Cambiar Contraseña</button>
+        </div>
+        <div v-if="editing" class="botones-editar">
+          <button class="boton-password" @click="guardarCambios" :disabled="!isModified">Guardar</button>
+          <button class="boton-password-cancel" @click="cancelar">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div v-if="changingPassword" class="perfil-password">
+      <div class="datos1">
+        <h1>Actualizar contraseña</h1>
+
+        <div class="input-contenedor">
+          <label for="currentPasswordChange">CONTRASEÑA ACTUAL :</label>
+          <div class="input-wrapper">
+            <i class="fas fa-lock icon"></i>
+            <input :type="showCurrentPassword ? 'text' : 'password'" id="currentPasswordChange"
+              v-model="currentPassword" :class="{ 'editing': changingPassword }">
+            <button type="button" class="toggle-password" @click="toggleCurrentPasswordVisibility">
+              <i :class="showCurrentPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+        </div>
+        <div class="input-contenedor">
+          <label for="newPassword">NUEVA CONTRASEÑA :</label>
+          <div class="input-wrapper">
+            <i class="fas fa-lock icon"></i>
+            <input :type="showNewPassword ? 'text' : 'password'" id="newPassword" v-model="newPassword"
+              :class="{ 'editing': changingPassword }">
+            <button type="button" class="toggle-password" @click="toggleNewPasswordVisibility">
+              <i :class="showNewPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+        </div>
+        <div class="input-contenedor">
+          <label for="confirmNewPassword">CONFIRMAR NUEVA CONTRASEÑA :</label>
+          <div class="input-wrapper">
+            <i class="fas fa-lock icon"></i>
+            <input :type="showConfirmNewPassword ? 'text' : 'password'" id="confirmNewPassword"
+              v-model="confirmNewPassword" :class="{ 'editing': changingPassword }">
+            <button type="button" class="toggle-password" @click="toggleConfirmNewPasswordVisibility">
+              <i :class="showConfirmNewPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+      <div class="botones-editar1">
+        <button class="boton-password" @click="guardarNuevaContrasena">Guardar</button>
+        <button class="boton-password-cancel" @click="cancelarCambioContrasena">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+</template>
+
+<script>
+import axios from 'axios';
+import Swal from 'sweetalert2';
+
+export default {
+  name: 'Perfil-vue',
+  data() {
+    return {
+      usuario: {
+        nombre: '',
+        email: '',
+        password: ''
+      },
+      showCurrentPassword: false,
+      currentPassword: '',
+      editing: false,
+      isModified: false,
+      showNewPassword: false,
+      showConfirmNewPassword: false,
+      newPassword: '',
+      confirmNewPassword: '',
+      changingPassword: false,
+      originalUsuario: {},
+      nombreInvalido: false,
+      mensajeNombre: '',
+      emailInvalido: false,
+      mensajeEmail: ''
+    };
+  },
+  created() {
+    this.cargarDatosUsuario();
+  },
+  methods: {
+    cargarDatosUsuario() {
+      axios.get('http://localhost:5000/api/perfil', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        .then(response => {
+          const { nombre, email } = response.data.usuario;
+          this.usuario = { nombre, email, password: '' };
+          this.originalUsuario = { ...this.usuario };
+        })
+        .catch(error => {
+          console.error('Error al cargar datos del usuario:', error.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'Error al cargar datos del usuario',
+            text: 'Hubo un problema al cargar los datos del usuario.'
+          });
+        });
+    },
+    editar() {
+      this.editing = true;
+    },
+    iniciarCambioContrasena() {
+      this.changingPassword = true;
+      this.editing = false;
+    },
+    validarNombre() {
+      const pattern = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]{3,}$/;
+      if (!pattern.test(this.usuario.nombre)) {
+        this.nombreInvalido = true;
+        this.mensajeNombre = 'El nombre solo puede contener letras, y minimo 3 carácteres.';
+
+        return false;
+      } else {
+        this.nombreInvalido = false;
+        this.mensajeNombre = '';
+        return true;
+      }
+    },
+    validarEmail() {
+      const pattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9]*(?:[._-][a-zA-Z0-9]{1,})?)@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{1,})?$/;
+      if (!pattern.test(this.usuario.email)) {
+        this.emailInvalido = true;
+        this.mensajeEmail = 'Por favor ingresa un correo electrónico válido.';
+        return false;
+      } else {
+        this.emailInvalido = false;
+        this.mensajeEmail = '';
+        return true;
+      }
+    },
+    guardarCambios() {
+      if (!this.currentPassword) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Contraseña Requerida',
+          text: 'Por favor ingresa tu contraseña para guardar los cambios.'
+        });
+        return;
+      }
+
+      axios.post('http://localhost:5000/api/verificar', {
+        password: this.currentPassword
+      }, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+        .then(() => {
+          const nombreValido = this.validarNombre();
+          const emailValido = this.validarEmail();
+
+          if (nombreValido && emailValido) {
+            this.realizarActualizacion();
+          } else {
+            // Mostrar alerta específica según la validación que falló
+            if (!nombreValido) {
+              Swal.fire({
+                icon: 'error',
+                title: 'Nombre Inválido',
+                text: 'El nombre solo puede contener letras y  mínimo 3 digitos'
+              });
+            } else if (!emailValido) {
+              Swal.fire({
+                icon: 'error',
+                title: 'Correo Electrónico Inválido',
+                text: 'Por favor ingresa un correo electrónico válido.'
+              });
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Error al verificar contraseña:', error.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'Contraseña Incorrecta',
+            text: 'La contraseña ingresada es incorrecta. Por favor verifica e intenta nuevamente.'
+          });
+        });
+    },
+    realizarActualizacion() {
+      const updatedData = {
+        nombre: this.usuario.nombre,
+        email: this.usuario.email
+      };
+
+      axios.put('http://localhost:5000/api/perfil', updatedData, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        .then(() => {
+          Swal.fire({
+            icon: 'success',
+            title: 'Cambios Guardados',
+            text: 'Los cambios en el perfil se han guardado exitosamente.'
+          });
+          this.editing = false;
+          this.isModified = false;
+          this.originalUsuario = { ...this.usuario };
+          this.currentPassword = '';
+        })
+        .catch(error => {
+          console.error('Error al guardar cambios del usuario:', error.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'Error al Guardar Cambios',
+            text: 'Hubo un problema al guardar los cambios del perfil.'
+          });
+        });
+    },
+    guardarNuevaContrasena() {
+      if (this.newPassword.length < 8) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error en Nueva Contraseña',
+          text: 'La nueva contraseña debe tener al menos 8 caracteres.'
+        });
+        return;
+      }
+      if (!this.currentPassword) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Contraseña Actual Requerida',
+          text: 'Por favor ingresa tu contraseña actual.'
+        });
+        return;
+      }
+
+      if (this.newPassword !== this.confirmNewPassword) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error en Nueva Contraseña',
+          text: 'La nueva contraseña y la confirmación no coinciden.'
+        });
+        return;
+      }
+
+      axios.post('http://localhost:5000/api/verificar', {
+        password: this.currentPassword
+      }, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        .then(() => {
+          axios.put('http://localhost:5000/api/actualizar-contrasena', {
+            contrasenaActual: this.currentPassword,
+            nuevaContrasena: this.newPassword,
+          }, {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`
+            }
+          })
+            .then(response => {
+              console.log('Contraseña actualizada:', response.data);
+              this.changingPassword = false;
+              this.currentPassword = '';
+              this.newPassword = '';
+              this.confirmNewPassword = '';
+              Swal.fire({
+                icon: 'success',
+                title: 'Contraseña Actualizada',
+                text: 'La contraseña se ha actualizado correctamente.'
+              });
+            })
+            .catch(error => {
+              console.error('Error al cambiar contraseña:', error.message);
+              Swal.fire({
+                icon: 'error',
+                title: 'Error al cambiar contraseña',
+                text: 'Hubo un problema al cambiar la contraseña.'
+              });
+            });
+        })
+        .catch(error => {
+          console.error('Error al verificar contraseña:', error.message);
+          Swal.fire({
+            icon: 'error',
+            title: 'Contraseña Actual Incorrecta',
+            text: 'La contraseña actual ingresada es incorrecta. Por favor verifica e intenta nuevamente.'
+          });
+        });
+    },
+
+    cancelar() {
+      this.editing = false;
+      this.usuario = { ...this.originalUsuario };
+      this.currentPassword = '';
+    },
+    cancelarCambioContrasena() {
+      this.currentPassword = '';
+      this.newPassword = '';
+      this.confirmNewPassword = '';
+      this.changingPassword = false;
+    },
+    cerrarSesion() {
+      localStorage.removeItem('token');
+      this.$router.push('/login');
+    },
+    toggleCurrentPasswordVisibility() {
+      this.showCurrentPassword = !this.showCurrentPassword;
+    },
+    toggleNewPasswordVisibility() {
+      this.showNewPassword = !this.showNewPassword;
+    },
+    toggleConfirmNewPasswordVisibility() {
+      this.showConfirmNewPassword = !this.showConfirmNewPassword;
+    },
+    toggleMenu() {
+      this.menuOpen = !this.menuOpen;
+    }
+  },
+  watch: {
+    usuario: {
+      deep: true,
+      handler() {
+        this.isModified = this.usuario.nombre !== this.originalUsuario.nombre || this.usuario.email !== this.originalUsuario.email;
+      }
+    }
+  }
+};
+</script>
+
+<style>
+@import '../assets/estilos/formulario.css';
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&display=swap');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.0/css/all.min.css');
+
+.perfil {
+  width: 100%;
+  max-width: 500px;
+  height: 480px;
+  margin: 100px auto 20px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+  padding-bottom: 45px;
+  color: #fff;
+  margin-top: 150px;
+  background-color: white;
+  border-radius: 20px;
+  box-shadow: 0px 0px 40px rgba(0, 0, 0, 0.3);
+  /* Sombras */
+  margin-bottom: 0;
+
+}
+
+.datos {
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  margin: 0;
+  padding: 0;
+  padding: 40px;
+  max-width: 1200px;
+  border-radius: 10px;
+  padding-bottom: 20px;
+  width: 100%;
+}
+
+.datos h1 {
+  text-align: center;
+  /* Alineación central */
+  color: #009292;
+  /* Color del texto */
+  font-size: 27px;
+  margin-bottom: 30px;
+}
+
+.input-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 20px;
+  margin-top: 10px;
+  color: #262626;
+}
+
+/* Establece estilos para los iconos dentro de los contenedores de entrada */
+.input-wrapper i {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 35%;
+  /* Alinea el icono verticalmente */
+  left: 0px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+  color: #009292;
+  /* Color del icono */
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.toggle-icon {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 35%;
+  /* Alinea el icono verticalmente */
+  right: 30px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.input-wrapper {
+  position: relative;
+  /* Asegura que los elementos hijos se posicionen en relación a este contenedor */
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper .icon {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 35%;
+  /* Alinea el icono verticalmente */
+  left: 15px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+  color: #009292;
+  /* Color del icono */
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.perfil .boton-password,
+.perfil .boton-password-cancel {
+  margin-top: 0;
+}
+
+.perfil .input-contenedor {
+  display: flex;
+  flex-direction: column;
+  width: 450px;
+
+
+
+}
+
+label {
+  color: #262626;
+  font-weight: bold;
+  font-size: 13px;
+}
+
+.perfil-password {
+  width: 80%;
+  max-width: 900px;
+  margin: 100px auto 20px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  justify-content: flex-start;
+  padding-bottom: 45px;
+  color: #fff;
+  margin-top: 15px;
+}
+
+.perfil-password .boton-password,
+.perfil-password .boton-password-cancel {
+  margin-top: 30px;
+}
+
+.datos1 {
+  padding: 40px;
+  max-width: 500px;
+  border-radius: 10px;
+  padding-bottom: 10px;
+  width: 100%;
+}
+
+.datos1 h1 {
+  text-align: center;
+  color: #009292;
+  font-size: 27px;
+}
+
+.botones-editar1 {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0 auto;
+}
+
+
+.botones-editar1 button {
+  width: 60%;
+}
+
+.boton-password,
+.boton-password-cancel {
+  display: flex;
+  justify-content: space-between;
+  width: 50%;
+  padding: 10px;
+  color: #fff;
+  border: none;
+  text-align: center;
+  font-size: 18px;
+  border-radius: 20px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: bold;
+  margin-top: 20px;
+  margin-bottom: 20px
+}
+
+
+
+.boton-password {
+  background-color: #009292;
+  border: 2px solid #3b3a3a;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.boton-password:hover {
+  background-color: aqua;
+  border: 2px solid black;
+  color: black;
+  font-weight: bold;
+}
+
+.boton-password-cancel {
+  background-color: rgb(230, 72, 72);
+  border: 2px solid #3b3a3a;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.boton-password-cancel:hover {
+  background-color: red;
+  border: 2px solid black;
+  color: black;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+
+
+.datos1 label {
+  color: #262626;
+  font-weight: bold;
+  font-size: 13px;
+}
+
+.datos1 .input-contenedor {
+  right: 62px;
+}
+
+.datos1 .input-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 20px;
+  margin-top: 10px;
+  color: #262626;
+}
+
+/* Establece estilos para los iconos dentro de los contenedores de entrada */
+.datos1 .input-wrapper i {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 35%;
+  /* Alinea el icono verticalmente */
+  left: 15px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+  color: #009292;
+  /* Color del icono */
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.datos1 .input-wrapper .toggle-password {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 45%;
+  /* Alinea el icono verticalmente */
+  right: 55px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+  color: #009292;
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.datos1 .input-wrapper {
+  position: relative;
+  /* Asegura que los elementos hijos se posicionen en relación a este contenedor */
+  display: flex;
+  align-items: center;
+}
+
+.datos1 .input-wrapper .icon {
+  position: absolute;
+  /* Posición absoluta para colocar el icono dentro del campo */
+  top: 35%;
+  /* Alinea el icono verticalmente */
+  left: 15px;
+  /* Ajusta la posición horizontal del icono */
+  transform: translateY(-50%);
+  /* Centra verticalmente el icono */
+  color: #009292;
+  /* Color del icono */
+  font-size: 1rem;
+  /* Tamaño del icono */
+}
+
+.perfil input {
+  padding: 15px 40px;
+  /* Espaciado de relleno con espacio para el icono */
+  border: 1px solid #463e3e;
+  border-radius: 10px;
+  width: 100%;
+  color: #463e3e
+}
+
+input.editing {
+  border-color: blue;
+}
+
+input:disabled {
+  background-color: #f0f0f0;
+}
+
+.boton-accion {
+  width: 500px;
+  padding: 10px;
+  color: #fff;
+  border: none;
+  text-align: ce;
+  font-size: 18px;
+  border-radius: 20px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.boton-accion {
+  background: #009292;
+  /* Color de fondo */
+  border: 2px solid #3b3a3a;
+  color: white;
+}
+
+.boton-accion:hover {
+  background-color: aqua;
+  border: 2px solid black;
+  color: black;
+  font-weight: bold;
+}
+
+
+.acciones {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 20px;
+}
+
+.botones-no-editar {
+  display: flex;
+  justify-content: space-between;
+  width: 80%;
+  margin: 0 auto;
+}
+
+.botones-editar {
+  display: flex;
+  justify-content: space-between;
+  width: 50%;
+  margin: 0 auto;
+}
+
+
+.botones-no-editar button,
+.botones-editar button {
+  width: 48%;
+}
+
+.re h1 {
+  color: black;
+  font-size: 30px;
+  margin-top: 200px
+}
+</style>
